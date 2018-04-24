@@ -140,14 +140,14 @@ func CollectStatusFromReader(reader io.Reader, socketPath string, ch chan<- prom
 	return nil
 }
 
-func CollectStatusFromSocket(path string, statusPath string, ch chan<- prometheus.Metric) error {
+func CollectStatusFromSocket(path string, socketType string, statusPath string, ch chan<- prometheus.Metric) error {
 
 	env := make(map[string]string)
 	env["SCRIPT_FILENAME"] = statusPath
 	env["SCRIPT_NAME"] = statusPath
 	env["REQUEST_METHOD"] = "GET"
 
-	fcgi, err := fcgiclient.Dial("unix", path)
+	fcgi, err := fcgiclient.Dial(socketType, path)
 	if err != nil {
 		return err
 	}
@@ -214,12 +214,14 @@ func CollectMetricsFromScript(socketPaths []string, scriptPaths []string) ([]*cl
 
 type PhpfpmExporter struct {
 	socketPaths []string
+	socketType  string
 	statusPath  string
 }
 
-func NewPhpfpmExporter(socketPaths []string, statusPath string) (*PhpfpmExporter, error) {
+func NewPhpfpmExporter(socketPaths []string, socketType string, statusPath string) (*PhpfpmExporter, error) {
 	return &PhpfpmExporter{
 		socketPaths: socketPaths,
+		socketType:  socketType,
 		statusPath:  statusPath,
 	}, nil
 }
@@ -236,7 +238,7 @@ func (e *PhpfpmExporter) Describe(ch chan<- *prometheus.Desc) {
 func (e *PhpfpmExporter) Collect(ch chan<- prometheus.Metric) {
 
 	for _, socketPath := range e.socketPaths {
-		err := CollectStatusFromSocket(socketPath, e.statusPath, ch)
+		err := CollectStatusFromSocket(socketPath, e.socketType, e.statusPath, ch)
 		if err == nil {
 			ch <- prometheus.MustNewConstMetric(
 				phpfpmUpDesc,
@@ -259,6 +261,7 @@ func main() {
 		listenAddress        = kingpin.Flag("web.listen-address", "Address to listen on for web interface and telemetry.").Default(":9253").String()
 		metricsPath          = kingpin.Flag("web.telemetry-path", "Path under which to expose metrics.").Default("/metrics").String()
 		socketPaths          = kingpin.Flag("phpfpm.socket-paths", "Paths of the PHP-FPM sockets.").Strings()
+		socketType           = kingpin.Flag("phpfpm.socket-type", "Type of the PHP-FPM sockets.").Default("tcp").String()
 		socketDirectories    = kingpin.Flag("phpfpm.socket-directories", "Path(s) of the directory where PHP-FPM sockets are located.").Strings()
 		statusPath           = kingpin.Flag("phpfpm.status-path", "Path which has been configured in PHP-FPM to show status page.").Default("/status").String()
 		scriptCollectorPaths = kingpin.Flag("phpfpm.script-collector-paths", "Paths of the PHP file whose output needs to be collected.").Strings()
@@ -287,7 +290,7 @@ func main() {
 		os.Exit(0)
 	}
 
-	exporter, err := NewPhpfpmExporter(sockets, *statusPath)
+	exporter, err := NewPhpfpmExporter(sockets, *socketType, *statusPath)
 	if err != nil {
 		panic(err)
 	}
